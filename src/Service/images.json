@@ -6,12 +6,33 @@
   },
   {
     "id": 2,
-    "path": "assets/img/5810037836416665138.jpg",
+    "path": "assets/img/MANIFESTO.jpg",
     "description": "Descrizione per Immagine 2"
   },
   {
     "id": 3,
-    "path": "assets/img/5810037836416665138.jpg",
+    "path": "assets/img/MANIFESTA copia(1).jpg",
     "description": "Descrizione per Immagine 3"
-  }
-]
+  }, 
+  {
+    "id": 4, 
+    "path": "assets/img/5841245871948284695.jpg",
+    "description": "Descrizione per Immagine 4" 
+  }, 
+  {
+    "id": 5, 
+    "path": "assets/img/5884215349002487148.jpg",
+    "description": "Descrizione per Immagine 5" 
+  }, 
+  {
+    "id": 6, 
+    "path": "assets/img/5913485980621456656.jpg",
+    "description": "Descrizione per Immagine 6" 
+  }, 
+  {
+    "id": 7, 
+    "path": "assets/img/6012662462022797111.jpg",
+    "description": "Descrizione per Immagine 7" 
+  } 
+] 
+ 
