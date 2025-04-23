@@ -20,28 +20,36 @@ function ImagePlane({ path, position }) {
 
 
 function Experience() {
-  // Calculate random positions for the planes
+  // Calculate random positions for the planes within a smaller range
   const planePositions = imagesData.map(() => {
-    const x = (Math.random() - 0.5) * 10; // Random X between -5 and 5
-    const y = (Math.random() - 0.5) * 10; // Random Y between -5 and 5
-    const z = (Math.random() - 0.5) * 10; // Random Z between -5 and 5
-    return [x, y, z]; // Position each plane randomly
+    const range = 5; // Make the range smaller
+    const x = (Math.random() - 0.5) * range; // Random X
+    const y = (Math.random() - 0.5) * range; // Random Y
+    const z = (Math.random() - 0.5) * range; // Random Z
+    return [x, y, z];
   });
 
   return (
-    <Canvas camera={{fov: 80}}>
+    // Explicitly set camera position
+    <Canvas camera={{ fov: 75, position: [0, 0, 10] }}>
       {/* Add some basic lighting */}
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 10, 5]} intensity={1} />
+      <ambientLight intensity={0.6} /> {/* Slightly increased intensity */}
+      <directionalLight position={[10, 10, 10]} intensity={1} /> {/* Adjusted position */}
 
       <MapControls />
+
+      {/* Add a simple visible object for debugging */}
+      <mesh position={[0, 0, 0]}>
+        <boxGeometry args={[0.5, 0.5, 0.5]} />
+        <meshStandardMaterial color="red" />
+      </mesh>
 
       {/* Map over the image data and render an ImagePlane for each */}
       {imagesData.map((image, index) => (
         <ImagePlane
           key={image.id}
           path={image.path}
-          position={planePositions[index]} // Use the randomly generated position
+          position={planePositions[index]}
         />
       ))}
     </Canvas>
