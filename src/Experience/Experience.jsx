@@ -38,11 +38,13 @@ function Experience() {
 
       <MapControls />
 
-      {/* Add a simple visible object for debugging */}
+      {/* Remove or comment out the red cube code below */}
+      {/* 
       <mesh position={[0, 0, 0]}>
         <boxGeometry args={[0.5, 0.5, 0.5]} />
         <meshStandardMaterial color="red" />
       </mesh>
+      */}
 
       {/* Map over the image data and render an ImagePlane for each */}
       {imagesData.map((image, index) => (
