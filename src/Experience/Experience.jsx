@@ -1,9 +1,43 @@
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { MapControls, Plane, useTexture, Text } from "@react-three/drei";
 import * as THREE from 'three';
 import imagesData from '../Service/images.json';
-import { useState, useCallback, useEffect, Suspense, useMemo } from 'react';
+import { useState, useCallback, useEffect, Suspense, useMemo, useRef } from 'react';
 import imageDescriptions from '../Service/imageDescriptions.json';
+
+// Helper function to create a rounded rectangle texture
+const createRoundedRectTexture = (width, height, radius) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  
+  // Clear the canvas with a transparent background
+  ctx.clearRect(0, 0, width, height);
+  
+  // Draw a rounded rectangle
+  ctx.beginPath();
+  ctx.moveTo(radius, 0);
+  ctx.lineTo(width - radius, 0);
+  ctx.quadraticCurveTo(width, 0, width, radius);
+  ctx.lineTo(width, height - radius);
+  ctx.quadraticCurveTo(width, height, width - radius, height);
+  ctx.lineTo(radius, height);
+  ctx.quadraticCurveTo(0, height, 0, height - radius);
+  ctx.lineTo(0, radius);
+  ctx.quadraticCurveTo(0, 0, radius, 0);
+  ctx.closePath();
+  
+  // Fill with white
+  ctx.fillStyle = 'white';
+  ctx.fill();
+  
+  // Create a texture from the canvas
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  
+  return texture;
+};
 
 // Component to render a single image plane with error handling
 function ImagePlane({ path, position, id, onClick }) {
@@ -165,52 +199,48 @@ function InfoWindow({ image, position }) {
 function ZoomedImageView({ imagePath, onClose, onNext, onPrevious }) {
   const texture = useTexture(imagePath);
   const [hasError, setHasError] = useState(false);
-  const { camera, size } = useThree();
+  const { size } = useThree();
   
-  // Add error handling for texture loading
+  // Load navigation icons with error handling
+  const [hasIconError, setHasIconError] = useState(false);
+  const prevIcon = useTexture('/assets/icons/left-arrow.png');
+  const nextIcon = useTexture('/assets/icons/right-arrow.png');
+  const closeIcon = useTexture('/assets/icons/close.png');
+  
+  // Add error handling for icon loading
   useEffect(() => {
     const handleError = () => {
-      console.error(`Error loading zoomed texture: ${imagePath}`);
-      setHasError(true);
+      console.error('Error loading navigation icons');
+      setHasIconError(true);
     };
     
-    if (texture && texture.source) {
-      const source = texture.source;
-      if (source.data) {
-        source.data.addEventListener('error', handleError);
-        return () => {
-          source.data.removeEventListener('error', handleError);
-        };
+    const icons = [prevIcon, nextIcon, closeIcon];
+    
+    icons.forEach(icon => {
+      if (icon && icon.source && icon.source.data) {
+        icon.source.data.addEventListener('error', handleError);
       }
-    }
-  }, [texture, imagePath]);
-
-  // Adjust camera position and zoom when component mounts
-  useEffect(() => {
-    // Save original camera position
-    const originalPosition = camera.position.clone();
+    });
     
-    // Move camera closer to the image
-    camera.position.set(0, 0, 5);
-    camera.lookAt(0, 0, 0);
-    
-    // Cleanup function to restore original camera position
     return () => {
-      camera.position.copy(originalPosition);
-      camera.lookAt(0, 0, 0);
+      icons.forEach(icon => {
+        if (icon && icon.source && icon.source.data) {
+          icon.source.data.removeEventListener('error', handleError);
+        }
+      });
     };
-  }, [camera]);
-
-  // Calculate aspect ratio and dimensions
+  }, [prevIcon, nextIcon, closeIcon]);
+  
+  // Remove camera manipulation
   const imageAspect = texture && texture.image ? texture.image.width / texture.image.height : 1;
   const viewportAspect = size.width / size.height;
   
   let width, height;
   if (imageAspect > viewportAspect) {
-    width = size.width * 0.8 / 100;
+    width = 8; // Fixed width
     height = width / imageAspect;
   } else {
-    height = size.height * 0.8 / 100;
+    height = 8; // Fixed height
     width = height * imageAspect;
   }
 
@@ -249,7 +279,7 @@ function ZoomedImageView({ imagePath, onClose, onNext, onPrevious }) {
       <group position={[0, -height/2 - 0.8, 0]}>
         {/* Previous button */}
         <Plane 
-          args={[0.6, 0.6]} // Square dimensions
+          args={[0.6, 0.6]}
           position={[-2, 0, 0]}
           onClick={(e) => {
             e.stopPropagation();
@@ -265,7 +295,7 @@ function ZoomedImageView({ imagePath, onClose, onNext, onPrevious }) {
         
         {/* Next button */}
         <Plane 
-          args={[0.6, 0.6]} // Square dimensions
+          args={[0.6, 0.6]}
           position={[2, 0, 0]}
           onClick={(e) => {
             e.stopPropagation();
@@ -281,7 +311,7 @@ function ZoomedImageView({ imagePath, onClose, onNext, onPrevious }) {
         
         {/* Close button */}
         <Plane 
-          args={[0.6, 0.6]} // Square dimensions
+          args={[0.6, 0.6]}
           position={[0, 0, 0]}
           onClick={(e) => {
             e.stopPropagation();
@@ -299,200 +329,216 @@ function ZoomedImageView({ imagePath, onClose, onNext, onPrevious }) {
   );
 }
 
-function ImagePopup({ image, onClose, onNext, onPrevious }) {
+// Create a component that renders a fixed overlay using HTML and CSS
+// In the FixedImagePopup component
+function FixedImagePopup({ image, onClose, onNext, onPrevious }) {
+  const [hasError, setHasError] = useState(false);
   const texture = useTexture(image.path);
+  
+  // Get description from imageDescriptions.json
   const description = imageDescriptions[image.path] || "No description available.";
-
-  // Dynamically calculate image aspect ratio and size
-  let imageWidth = 4;
-  let imageHeight = 4;
-  if (texture?.image) {
-    const aspect = texture.image.width / texture.image.height;
-    if (aspect >= 1) {
-      imageWidth = 4;
-      imageHeight = 4 / aspect;
-    } else {
-      imageHeight = 4;
-      imageWidth = 4 * aspect;
+  
+  // Add error handling for texture loading
+  useEffect(() => {
+    const handleError = () => {
+      console.error(`Error loading texture for popup image: ${image.path}`);
+      setHasError(true);
+    };
+    
+    if (texture && texture.source) {
+      const source = texture.source;
+      if (source.data) {
+        source.data.addEventListener('error', handleError);
+        return () => {
+          source.data.removeEventListener('error', handleError);
+        };
+      }
+    }
+  }, [texture, image.path]);
+  
+  // Use useFrame to ensure the popup is always in front of the camera
+  const popupRef = useRef();
+  useFrame(({ camera }) => {
+    // This keeps the popup fixed in front of the camera
+    popupRef.current.position.copy(camera.position);
+    popupRef.current.position.z -= 5; // Keep it in front of the camera
+    popupRef.current.quaternion.copy(camera.quaternion);
+  });
+  
+  // Calculate image aspect ratio
+  const imageAspect = texture && texture.image ? texture.image.width / texture.image.height : 1;
+  
+  // Fixed card dimensions
+  const cardWidth = 10;
+  const cardHeight = 7;  // Reduced from 8 to 7 for a less tall appearance
+  
+  // Fixed image container dimensions
+  const imageContainerWidth = 5;
+  const imageContainerHeight = 4.5;  // Adjusted to match the new card height
+  
+  // Calculate image dimensions to fit within container while preserving aspect ratio
+  let imageWidth, imageHeight;
+  if (imageAspect >= 1) {
+    // Landscape image
+    imageWidth = imageContainerWidth;
+    imageHeight = imageWidth / imageAspect;
+    
+    // If height exceeds container, scale down
+    if (imageHeight > imageContainerHeight) {
+      imageHeight = imageContainerHeight;
+      imageWidth = imageHeight * imageAspect;
+    }
+  } else {
+    // Portrait image
+    imageHeight = imageContainerHeight;
+    imageWidth = imageHeight * imageAspect;
+    
+    // If width exceeds container, scale down
+    if (imageWidth > imageContainerWidth) {
+      imageWidth = imageContainerWidth;
+      imageHeight = imageWidth / imageAspect;
     }
   }
-
-  // The rest of your layout constants
-  const cardWidth = 8;
-  const cardHeight = 6.5;
-  const rightPanelWidth = 3.2;
-  const buttonHeight = 0.7;
-  const buttonWidth = 2.2;
-
+  
+  // Fixed text box dimensions
+  const textBoxWidth = 3.2;
+  const textBoxHeight = 4.5;  // Adjusted to match the new card height
+  
+  // Define rounded corners parameters
+  const cornerRadius = 0.2; // Adjust this value to control the roundness
+  
+  // Create rounded rectangle textures for masking
+  const imageRoundedMask = useMemo(() => 
+    createRoundedRectTexture(imageWidth * 100, imageHeight * 100, cornerRadius * 100)
+  , [imageWidth, imageHeight, cornerRadius]);
+  
+  const textBoxRoundedMask = useMemo(() => 
+    createRoundedRectTexture(textBoxWidth * 100, textBoxHeight * 100, cornerRadius * 100)
+  , [textBoxWidth, textBoxHeight, cornerRadius]);
+  
   return (
-    <group>
-      {/* Modal overlay */}
-      <Plane
-        args={[16, 12]}
-        position={[0, 0, 0.5]}
+    <group ref={popupRef} renderOrder={1000}>
+      {/* Semi-transparent background */}
+      <Plane 
+        args={[30, 30]} 
+        position={[0, 0, -1]}
         onClick={onClose}
       >
-        <meshBasicMaterial color="#eaeaea" transparent opacity={0.85} />
+        <meshBasicMaterial color="#000000" transparent opacity={0.0} depthTest={false} />
       </Plane>
-      {/* Card background */}
-      <Plane
-        args={[cardWidth, cardHeight]}
-        position={[0, 0, 1]}
-      >
-        <meshStandardMaterial color="#fff" transparent opacity={0.98} />
-      </Plane>
-      {/* Card border */}
-      <Plane
-        args={[cardWidth + 0.12, cardHeight + 0.12]}
-        position={[0, 0, 0.99]}
-      >
-        <meshStandardMaterial color="#d3d3d3" transparent opacity={0.7} />
-      </Plane>
-      {/* Image frame (matches image aspect) */}
-      <Plane
-        args={[imageWidth + 0.18, imageHeight + 0.18]}
-        position={[-(cardWidth / 2) + imageWidth / 2 + 0.3, 0.4, 1.015]}
-      >
-        <meshStandardMaterial color="#bbb" transparent opacity={0.18} />
-      </Plane>
-      {/* Image itself */}
-      <Plane
-        args={[imageWidth, imageHeight]}
-        position={[-(cardWidth / 2) + imageWidth / 2 + 0.3, 0.4, 1.02]}
-      >
-        <meshStandardMaterial map={texture} color="#fff" />
-      </Plane>
-      {/* ... rest of your interface ... */}
-      {/* Right panel */}
-      <Plane
-        args={[rightPanelWidth, cardHeight - 0.6]}
-        position={[(cardWidth / 2) - rightPanelWidth / 2 - 0.2, 0, 1.01]}
-      >
-        <meshStandardMaterial color="#f7f7f7" transparent opacity={0.95} />
-      </Plane>
-      {/* Name */}
-      <Text
-        position={[(cardWidth / 2) - rightPanelWidth / 2 - 0.2, 1.8, 1.02]}
-        fontSize={0.32}
-        color="#222"
-        anchorX="center"
-        anchorY="middle"
-        maxWidth={rightPanelWidth - 0.4}
-      >
-        {image.name || "NAME"}
-      </Text>
-      {/* Object count */}
-      <Text
-        position={[(cardWidth / 2) - rightPanelWidth / 2 - 0.2, 1.3, 1.02]}
-        fontSize={0.18}
-        color="#888"
-        anchorX="center"
-        anchorY="middle"
-        maxWidth={rightPanelWidth - 0.4}
-      >
-        {image.objects ? `${image.objects} objects` : "— objects"}
-      </Text>
-      {/* See Similar Button */}
-      <Plane
-        args={[buttonWidth, buttonHeight]}
-        position={[(cardWidth / 2) - rightPanelWidth / 2 - 0.2, 0.5, 1.02]}
-        onClick={(e) => { e.stopPropagation(); /* handle see similar */ }}
-      >
-        <meshStandardMaterial color="#faff00" transparent opacity={0.9} />
-      </Plane>
-      <Text
-        position={[(cardWidth / 2) - rightPanelWidth / 2 - 0.2, 0.5, 1.03]}
-        fontSize={0.18}
-        color="#222"
-        anchorX="center"
-        anchorY="middle"
-      >
-        See Similar
-      </Text>
-      {/* Explore Button */}
-      <Plane
-        args={[buttonWidth, buttonHeight]}
-        position={[(cardWidth / 2) - rightPanelWidth / 2 - 0.2, -0.1, 1.02]}
-        onClick={(e) => { e.stopPropagation(); /* handle explore */ }}
-      >
-        <meshStandardMaterial color="#eaeaea" transparent opacity={0.9} />
-      </Plane>
-      <Text
-        position={[(cardWidth / 2) - rightPanelWidth / 2 - 0.2, -0.1, 1.03]}
-        fontSize={0.18}
-        color="#222"
-        anchorX="center"
-        anchorY="middle"
-      >
-        EXPLORE THIS SPACE 🕵️
-      </Text>
-      {/* Previous/Next Buttons */}
-      <Plane
-        args={[buttonWidth / 2, buttonHeight]}
-        position={[(cardWidth / 2) - rightPanelWidth / 2 - 0.8, -1.2, 1.02]}
-        onClick={(e) => { e.stopPropagation(); onPrevious(); }}
-      >
-        <meshStandardMaterial color="#eaeaea" transparent opacity={0.9} />
-      </Plane>
-      <Text
-        position={[(cardWidth / 2) - rightPanelWidth / 2 - 0.8, -1.2, 1.03]}
-        fontSize={0.16}
-        color="#222"
-        anchorX="center"
-        anchorY="middle"
-      >
-        {"< Previous"}
-      </Text>
-      <Plane
-        args={[buttonWidth / 2, buttonHeight]}
-        position={[(cardWidth / 2) - rightPanelWidth / 2 + 0.4, -1.2, 1.02]}
-        onClick={(e) => { e.stopPropagation(); onNext(); }}
-      >
-        <meshStandardMaterial color="#eaeaea" transparent opacity={0.9} />
-      </Plane>
-      <Text
-        position={[(cardWidth / 2) - rightPanelWidth / 2 + 0.4, -1.2, 1.03]}
-        fontSize={0.16}
-        color="#222"
-        anchorX="center"
-        anchorY="middle"
-      >
-        {"Next >"}
-      </Text>
-      {/* Description (below image) */}
-      <Plane
-        args={[imageWidth, 0.7]}
-        position={[-(cardWidth / 2) + imageWidth / 2 + 0.3, -(imageHeight / 2) - 0.5, 1.01]}
-      >
-        <meshStandardMaterial color="#f7f7f7" transparent opacity={0.95} />
-      </Plane>
-      <Text
-        position={[-(cardWidth / 2) + imageWidth / 2 + 0.3, -(imageHeight / 2) - 0.5, 1.02]}
-        fontSize={0.18}
-        color="#222"
-        anchorX="center"
-        anchorY="middle"
-        maxWidth={imageWidth - 0.4}
-      >
-        {description}
-      </Text>
-      {/* Close button (top right) */}
-      <Plane
-        args={[0.5, 0.5]}
-        position={[(cardWidth / 2) - 0.4, (cardHeight / 2) - 0.4, 1.1]}
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-      >
-        <meshStandardMaterial color="#bbb" transparent opacity={0.8} />
-      </Plane>
-      <Text
-        position={[(cardWidth / 2) - 0.4, (cardHeight / 2) - 0.4, 1.12]}
-        fontSize={0.28}
-        color="#fff"
-        anchorX="center"
-        anchorY="middle"
-      >
-        X
-      </Text>
+      
+      {/* Card container */}
+      <group position={[0, 0, 0]}>
+        {/* Main card */}
+        <Plane 
+          args={[cardWidth, cardHeight]} 
+          position={[0, 0, 0]}
+        >
+          <meshBasicMaterial color="#ffffff" depthTest={false} />
+        </Plane>
+        
+        {/* Image container - fixed position and size */}
+        <group position={[-2, 0.3, 0.01]}>  {/* Moved from [-2, 0, 0.01] to [-2, 0.3, 0.01] */}
+          {/* Image with rounded corners */}
+          <Plane 
+            args={[imageWidth, imageHeight]} 
+            position={[0, 0, 0]}
+          >
+            <meshBasicMaterial 
+              map={hasError ? null : texture} 
+              transparent 
+              depthTest={false}
+              color={hasError ? "#ff6b9d" : "#ffffff"}
+              alphaMap={imageRoundedMask}
+              alphaTest={0.5}
+            />
+          </Plane>
+        </group>
+        
+        {/* Description box - adjusted position slightly up and to the right */}
+        <group position={[2.5, 0.3, 0.01]}>
+          <Plane
+            args={[textBoxWidth, textBoxHeight]}
+            position={[0, 0, 0]}
+          >
+            <meshBasicMaterial 
+              color="#333333" 
+              transparent 
+              opacity={0.7} 
+              depthTest={false}
+              alphaMap={textBoxRoundedMask}
+              alphaTest={0.5}
+            />
+          </Plane>
+          
+          <Text
+            position={[0, 0, 0.01]}
+            fontSize={0.18}
+            color="#ffffff"
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={textBoxWidth - 0.4}
+            depthTest={false}
+            textAlign="center"
+          >
+            {description}
+          </Text>
+        </group>
+        
+        {/* Navigation buttons - fixed position */}
+        <group position={[3.5, -cardHeight/2 + 1, 0]}>
+          <Plane args={[1.2, 0.5]} position={[-0.7, 0, 0]} onClick={(e) => {
+            e.stopPropagation();
+            onPrevious();
+          }}>
+            <meshBasicMaterial color="#eeeeee" transparent opacity={0.9} depthTest={false} />
+          </Plane>
+          <Text
+            position={[-0.7, 0, 0.01]}
+            fontSize={0.15}
+            color="#222222"
+            anchorX="center"
+            anchorY="middle"
+            depthTest={false}
+          >
+            &lt; Previous
+          </Text>
+          
+          <Plane args={[1.2, 0.5]} position={[0.7, 0, 0]} onClick={(e) => {
+            e.stopPropagation();
+            onNext();
+          }}>
+            <meshBasicMaterial color="#eeeeee" transparent opacity={0.9} depthTest={false} />
+          </Plane>
+          <Text
+            position={[0.7, 0, 0.01]}
+            fontSize={0.15}
+            color="#222222"
+            anchorX="center"
+            anchorY="middle"
+            depthTest={false}
+          >
+            Next &gt;
+          </Text>
+        </group>
+        
+        {/* Close button (X) */}
+        <group position={[cardWidth/2 - 0.5, cardHeight/2 - 0.5, 0.02]}>
+          <Plane args={[0.5, 0.5]} position={[0, 0, 0]} onClick={onClose}>
+            <meshBasicMaterial color="#ff5555" transparent opacity={0.9} depthTest={false} />
+          </Plane>
+          <Text
+            position={[0, 0, 0.01]}
+            fontSize={0.3}
+            color="#ffffff"
+            anchorX="center"
+            anchorY="middle"
+            depthTest={false}
+          >
+            X
+          </Text>
+        </group>
+      </group>
     </group>
   );
 }
@@ -501,15 +547,12 @@ function Experience() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
   const [popupText, setPopupText] = useState('');
-  const planePositions = useMemo(() => (
-    imagesData.map(() => {
-      const range = 5;
-      const x = (Math.random() - 0.5) * range;
-      const y = (Math.random() - 0.5) * range;
-      const z = (Math.random() - 0.5) * range;
-      return [x, y, z];
-    })
-  ), []);
+  const planePositions = useMemo(() => 
+    imagesData.map(image => image.position || [0, 0, 0])
+  , []);
+  
+  // Add a ref to store the camera controls
+  const controlsRef = useRef();
 
   const handleImageClick = useCallback((id, path, position) => {
     const index = imagesData.findIndex(img => img.id === id);
@@ -531,33 +574,88 @@ function Experience() {
     setSelectedImageIndex((prev) => (prev - 1 + imagesData.length) % imagesData.length);
     setPopupText('');
   }, []);
+  
+  // Add keyboard navigation handler
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Only handle arrow keys when popup is not shown
+      if (showPopup) return;
+      
+      const moveDistance = 1.0; // Adjust this value to control movement speed
+      
+      // Check if controls exist before attempting to use them
+      if (!controlsRef.current) return;
+      
+      switch (event.key) {
+        case 'ArrowUp':
+          controlsRef.current.target.y += moveDistance;
+          controlsRef.current.update();
+          break;
+        case 'ArrowDown':
+          controlsRef.current.target.y -= moveDistance;
+          controlsRef.current.update();
+          break;
+        case 'ArrowLeft':
+          controlsRef.current.target.x -= moveDistance;
+          controlsRef.current.update();
+          break;
+        case 'ArrowRight':
+          controlsRef.current.target.x += moveDistance;
+          controlsRef.current.update();
+          break;
+        default:
+          break;
+      }
+    };
+    
+    // Add event listener
+    window.addEventListener('keydown', handleKeyDown);
+    
+    // Clean up
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showPopup]);
 
   return (
     <Canvas camera={{ fov: 75, position: [0, 0, 10] }}>
       <ambientLight intensity={0.6} />
       <directionalLight position={[10, 10, 10]} intensity={1} />
       <Suspense fallback={null}>
-        <MapControls enabled={!showPopup} />
+        <MapControls 
+          ref={controlsRef}
+          enabled={!showPopup} 
+          mouseButtons={{
+            LEFT: THREE.MOUSE.PAN,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.ROTATE  // Restored to original ROTATE
+          }}
+          enableDamping={true}
+          dampingFactor={0.05}
+          screenSpacePanning={true}
+        />
+        
         {/* Image Grid */}
-        {!showPopup && imagesData.map((image, index) => (
-          <group key={image.id}>
-            <ImagePlane
-              id={image.id}
-              path={image.path}
-              position={planePositions[index]}
-              onClick={handleImageClick}
-            />
-          </group>
-        ))}
-        {/* Popup */}
+        <group renderOrder={100}>
+          {imagesData.map((image, index) => (
+            <group key={image.id}>
+              <ImagePlane
+                id={image.id}
+                path={image.path}
+                position={planePositions[index]}
+                onClick={handleImageClick}
+              />
+            </group>
+          ))}
+        </group>
+        
+        {/* Use the fixed popup component */}
         {showPopup && selectedImageIndex !== null && (
-          <ImagePopup
+          <FixedImagePopup
             image={imagesData[selectedImageIndex]}
             onClose={handleClosePopup}
             onNext={handleNext}
             onPrevious={handlePrevious}
-            text={popupText}
-            setText={setPopupText}
           />
         )}
       </Suspense>
