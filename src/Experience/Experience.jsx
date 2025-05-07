@@ -358,11 +358,32 @@ function FixedImagePopup({ image, onClose, onNext, onPrevious }) {
   
   // Use useFrame to ensure the popup is always in front of the camera
   const popupRef = useRef();
+  const [popupScale, setPopupScale] = useState(0.7); // Start smaller
+
+  // Animate the popup scale when it appears
+  useEffect(() => {
+    let animationFrame;
+    let scale = 0.7;
+    const animate = () => {
+      scale += (1 - scale) * 0.15; // Easing
+      setPopupScale(scale);
+      if (Math.abs(scale - 1) > 0.01) {
+        animationFrame = requestAnimationFrame(animate);
+      } else {
+        setPopupScale(1);
+      }
+    };
+    animate();
+    return () => cancelAnimationFrame(animationFrame);
+  }, [image]);
+
   useFrame(({ camera }) => {
-    // This keeps the popup fixed in front of the camera
-    popupRef.current.position.copy(camera.position);
-    popupRef.current.position.z -= 5; // Keep it in front of the camera
-    popupRef.current.quaternion.copy(camera.quaternion);
+    if (popupRef.current) {
+      popupRef.current.position.copy(camera.position);
+      popupRef.current.position.z -= 5;
+      popupRef.current.quaternion.copy(camera.quaternion);
+      popupRef.current.scale.set(popupScale, popupScale, popupScale); // Apply scale
+    }
   });
   
   // Calculate image aspect ratio
